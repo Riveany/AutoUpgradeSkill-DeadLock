@@ -1,0 +1,4 @@
+* text=auto eol=lf
+*.vxml_c binary
+*.vjs_c binary
+*.vpk binary
