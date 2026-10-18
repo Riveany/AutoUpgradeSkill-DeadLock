@@ -117,6 +117,7 @@
 	var undoRequested = false;
 	var resumeAtTotal = -1;           // a refund pause ends when this many points are spent again
 	var gateReason = '';
+	var nextStep = '';                // what auto-level is waiting for, shown on the MOD page
 
 	function valid(panel) {
 		return !!(panel && panel.IsValid && panel.IsValid());
@@ -1562,7 +1563,8 @@
 		}
 		setLabel(hubUi.status, 'Status: ' + (gateReason || 'ON') + '      Build in use: ' +
 			(buildName ? shortName(buildName) : '?') + '      Builds switched off: ' + offBuilds +
-			'      Settings: ' + storageText());
+			'      Settings: ' + storageText() +
+			(nextStep && !gateReason ? '\nNext: ' + nextStep : ''));
 		var b = hubUi.labels;
 		setLabel(b.enabled, settings.enabled ? 'ON' : 'OFF');
 		b.enabled.button.style.backgroundColor = settings.enabled ? '#2f6b45e0' : COLOR_OFF;
@@ -2268,8 +2270,9 @@
 				burstUntil = 0;
 				toast(root, 'Max now: nothing more to spend', false);
 			}
-			setStatus(root, lastDone ? 'waiting for the next point (last: ' + lastDone + ')' :
-				'no next step from your build (is a build with an ability order selected?)');
+			nextStep = lastDone ? 'waiting for the next step of your build (last: ' + lastDone + ')' :
+				'no next step from your build (is a build with an ability order selected?)';
+			setStatus(root, nextStep);
 			return;
 		}
 
@@ -2299,6 +2302,7 @@
 				action = plan(slot, other + 1, true);
 			} else {
 				plannedLabel = '';
+				nextStep = action.wait;
 				setStatus(root, action.wait);
 				return;
 			}
@@ -2320,6 +2324,7 @@
 		plannedLabel = '';
 		var method = currentMethod(action.kind);
 		var before = snapshot();
+		nextStep = action.label;
 		if (perform(method, action.kind, slot, pips, action.tier, suggested + 1)) {
 			actions++;
 			lastActed = suggested;
