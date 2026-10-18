@@ -1,0 +1,72 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>BALS1:{"o":"loading"}</title>
+<!--
+  Settings store for the Build Auto-Level Deadlock mod.
+
+  The mod loads this page in a hidden HTML panel inside the game and talks to
+  it through the URL fragment (mod -> page) and the document title
+  (page -> mod). Values live in this page's localStorage, which the game's
+  embedded browser keeps between sessions. The fragment never leaves the
+  computer: browsers do not send it to the server.
+
+  Request  (#<json>):  {"i":"<id>","o":"get","k":"<key>"}
+                       {"i":"<id>","o":"set","k":"<key>","v":"<string>"}
+                       {"i":"<id>","o":"hello"}
+  Reply    (title):    BALS1:{"i":"<id>","ok":true,"v":"<string or null>"}
+                       BALS1:{"i":"<id>","ok":false,"e":"<reason>"}
+-->
+<script>
+(function () {
+	'use strict';
+	var PREFIX = 'BALS1:';
+	var KEY_RE = /^bal\.[a-z0-9_.-]{1,40}$/;   // only this mod's keys
+	var MAX_VALUE = 16384;
+
+	function reply(obj) {
+		document.title = PREFIX + JSON.stringify(obj);
+	}
+
+	function handle() {
+		var raw = location.hash.slice(1);
+		if (!raw) {
+			return;
+		}
+		var req;
+		try {
+			req = JSON.parse(decodeURIComponent(raw));
+		} catch (e) {
+			return reply({ ok: false, e: 'unreadable request' });
+		}
+		var id = typeof req.i === 'string' ? req.i.slice(0, 40) : '';
+		try {
+			if (req.o === 'hello') {
+				var probe = '__bal_probe__';
+				localStorage.setItem(probe, '1');
+				localStorage.removeItem(probe);
+				return reply({ i: id, ok: true, o: 'ready', v: 1 });
+			}
+			if (typeof req.k !== 'string' || !KEY_RE.test(req.k)) {
+				return reply({ i: id, ok: false, e: 'bad key' });
+			}
+			if (req.o === 'get') {
+				return reply({ i: id, ok: true, v: localStorage.getItem(req.k) });
+			}
+			if (req.o === 'set') {
+				if (typeof req.v !== 'string' || req.v.length > MAX_VALUE) {
+					return reply({ i: id, ok: false, e: 'bad value' });
+				}
+				localStorage.setItem(req.k, req.v);
+				return reply({ i: id, ok: true });
+			}
+			reply({ i: id, ok: false, e: 'unknown op' });
+		} catch (e2) {
+			reply({ i: id, ok: false, e: 'storage unavailable' });
+		}
+	}
+
+	window.addEventListener('hashchange', handle);
+	handle();
+})();
+</script>
+<p>Settings store for the Build Auto-Level Deadlock mod. Nothing to see here.</p>
