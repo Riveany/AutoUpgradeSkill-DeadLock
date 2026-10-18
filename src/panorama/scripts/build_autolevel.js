@@ -303,43 +303,192 @@
 
 	// Saved settings survive a game restart only if the client offers persistent
 	// storage; otherwise they live on the window root for this session.
+	// Session copy first (instant), then the web store replaces it once it answers.
 	function loadSettings() {
 		settingsLoaded = true;
+		storageKind = 'session';
 		try {
-			if ($.persistentStorage && $.persistentStorage.getItem) {
-				storageKind = 'saved';
-				if (applyLoaded($.persistentStorage.getItem(STORE_KEY))) {
-					return;
-				}
-			}
-		} catch (e) {
-			storageKind = 'none';
-		}
-		try {
-			if (storageKind === 'none') {
-				storageKind = 'session';
-			}
 			applyLoaded(windowRoot().GetAttributeString(STORE_KEY, ''));
-		} catch (e2) {
+		} catch (e) {
 			// defaults it is
+		}
+		webStart();
+	}
+
+	// Copy on the window root: survives layout reloads within one map.
+	function saveSession() {
+		try {
+			windowRoot().SetAttributeString(STORE_KEY, JSON.stringify(settings));
+		} catch (e) {
+			// nowhere to keep it
 		}
 	}
 
 	function saveSettings() {
-		var raw = JSON.stringify(settings);
-		try {
-			if ($.persistentStorage && $.persistentStorage.setItem) {
-				$.persistentStorage.setItem(STORE_KEY, raw);
-			}
-		} catch (e) {
-			log('persistent storage failed: ' + e);
+		saveSession();
+		webSave();
+	}
+
+	// ---------------------------------------------------------------- web settings store
+	//
+	// Panorama gives scripts no file or storage access, but it can show web pages.
+	// A tiny page on this project's GitHub Pages site keeps the settings in its
+	// localStorage, which the game's embedded browser keeps between sessions
+	// (the same approach as the HP COLORS mod). The page is loaded in a hidden
+	// HTML panel; requests go in the URL fragment, replies come back in the
+	// page title. The fragment is never sent over the network.
+
+	var WEB_STORE_URL = 'https://riveany.github.io/AutoUpgradeSkill-DeadLock/store/';
+	var WEB_STORE_KEY = 'bal.settings';
+	var WEB_REPLY_PREFIX = 'BALS1:';
+	var web = {
+		panel: null, ready: false, failed: false, seq: 0, queue: [], waiting: null,
+		startedAt: 0, lastHello: 0, dirty: false, saveScheduled: false
+	};
+
+	function webSend(msg) {
+		msg.i = instanceId + ':' + (++web.seq);
+		web.panel.SetURL(WEB_STORE_URL + '#' + encodeURIComponent(JSON.stringify(msg)));
+		return msg.i;
+	}
+
+	function webPump() {
+		if (!web.ready || web.waiting || !web.queue.length || !valid(web.panel)) {
+			return;
 		}
+		var request = web.queue.shift();
+		request.id = webSend(request.msg);
+		request.deadline = now() + 5000;
+		web.waiting = request;
+	}
+
+	function webQueue(msg, callback) {
+		web.queue.push({ msg: msg, cb: callback });
+		webPump();
+	}
+
+	function webHello() {
+		web.lastHello = now();
+		webSend({ o: 'hello' });
+	}
+
+	function webOnTitle(a, b) {
+		var title = String((arguments.length > 1 ? b : a) || '');
+		if (title.indexOf(WEB_REPLY_PREFIX) !== 0) {
+			return;
+		}
+		var reply = null;
 		try {
-			windowRoot().SetAttributeString(STORE_KEY, raw);
-		} catch (e2) {
-			// nowhere to keep it
+			reply = JSON.parse(title.slice(WEB_REPLY_PREFIX.length));
+		} catch (e) {
+			return;
+		}
+		if (!reply || typeof reply.i !== 'string' || reply.i.indexOf(instanceId + ':') !== 0) {
+			return; // another copy's request, or the page's loading title
+		}
+		if (reply.o === 'ready') {
+			if (!web.ready && reply.ok) {
+				web.ready = true;
+				web.failed = false;
+				storageKind = 'web';
+				log('web settings store ready');
+				webQueue({ o: 'get', k: WEB_STORE_KEY }, function (r) {
+					if (web.dirty) {
+						webSave(); // changed before the store answered: keep the local choice
+					} else if (r.ok && r.v && applyLoaded(r.v)) {
+						log('settings loaded from the web store');
+						saveSession();
+					}
+					renderUi();
+				});
+			}
+			return;
+		}
+		if (web.waiting && reply.i === web.waiting.id) {
+			var done = web.waiting;
+			web.waiting = null;
+			if (!reply.ok) {
+				log('web store ' + done.msg.o + ' failed: ' + reply.e);
+			}
+			if (done.cb) {
+				done.cb(reply);
+			}
+			webPump();
 		}
 	}
+
+	function webStart() {
+		if (valid(web.panel)) {
+			return;
+		}
+		try {
+			var host = windowRoot();
+			var panel = host.FindChildTraverse('BALWebStore');
+			if (!valid(panel)) {
+				panel = $.CreatePanel('HTML', host, 'BALWebStore');
+				panel.style.width = '4px';
+				panel.style.height = '4px';
+				panel.style.opacity = '0';
+				panel.hittest = false;
+			}
+			web.panel = panel;
+			web.ready = false;
+			$.RegisterEventHandler('HTMLTitle', panel, webOnTitle);
+			web.startedAt = now();
+			webHello();
+		} catch (e) {
+			web.failed = true;
+			log('web settings store unavailable: ' + e);
+		}
+	}
+
+	function webTick(t) {
+		if (!valid(web.panel) || web.failed) {
+			return;
+		}
+		if (!web.ready) {
+			if (t - web.startedAt > 30000) {
+				web.failed = true;
+				log('web settings store did not answer (offline, or GitHub Pages not enabled); settings last for this map only');
+				renderUi();
+			} else if (t - web.lastHello > 4000) {
+				webHello(); // the page may have finished loading after the first request
+			}
+			return;
+		}
+		if (web.waiting && t > web.waiting.deadline) {
+			log('web store ' + web.waiting.msg.o + ' timed out');
+			web.waiting = null;
+			webPump();
+		}
+	}
+
+	function webSave() {
+		if (!web.ready) {
+			web.dirty = true;
+			return;
+		}
+		web.dirty = false;
+		if (web.saveScheduled) {
+			return;
+		}
+		web.saveScheduled = true;
+		$.Schedule(0.5, function () {
+			web.saveScheduled = false;
+			webQueue({ o: 'set', k: WEB_STORE_KEY, v: JSON.stringify(settings) });
+		});
+	}
+
+	function storageText() {
+		if (web.ready) {
+			return 'saved (web store)';
+		}
+		if (web.failed) {
+			return 'this map only (web store unreachable)';
+		}
+		return valid(web.panel) ? 'connecting to the web store...' : 'this map only';
+	}
+
 
 	// ---------------------------------------------------------------- hero and build names
 
@@ -1234,7 +1383,8 @@
 		hint.text = 'Per build: AL button after each build name in the build browser (B > Browse builds).\n' +
 			'To switch a build off permanently, put [noAL] in its name - the game saves that with the build.\n' +
 			'Refunding an upgrade pauses auto-level until you spend that point again.\n' +
-			'Other settings reset when the map changes or the game restarts (no storage available yet).';
+			'Settings are saved through a small page on the project\'s GitHub Pages site (needs internet);\n' +
+			'without it they last for the current map only.';
 		var tools = makeRow(root);
 		tools.style.marginTop = '14px';
 		makeButton(tools, 'BALHubDump', '80px', function () {
@@ -1412,7 +1562,8 @@
 			}
 		}
 		setLabel(hubUi.status, 'Status: ' + (gateReason || 'ON') + '      Build in use: ' +
-			(buildName ? shortName(buildName) : '?') + '      Builds switched off: ' + offBuilds);
+			(buildName ? shortName(buildName) : '?') + '      Builds switched off: ' + offBuilds +
+			'      Settings: ' + storageText());
 		var b = hubUi.labels;
 		setLabel(b.enabled, settings.enabled ? 'ON' : 'OFF');
 		b.enabled.button.style.backgroundColor = settings.enabled ? '#2f6b45e0' : COLOR_OFF;
@@ -1546,7 +1697,8 @@
 	function debugDump() {
 		var top = windowRoot();
 		log('---- debug dump v' + VERSION + ' ----');
-		log('storage=' + storageKind + ' settings=' + JSON.stringify(settings));
+		log('storage=' + storageKind + ' web ready=' + web.ready + ' failed=' + web.failed + ' queue=' + web.queue.length +
+			' settings=' + JSON.stringify(settings));
 		log('gate="' + gate() + '" pause="' + manualPause + '" burst=' + (burstUntil ? 'yes' : 'no'));
 		log('hero label="' + labelText(top.FindChildTraverse('HeroFavoritesHeaderLabel')) + '"');
 		var outer = top.FindChildTraverse('SelectedBuildOuter');
@@ -2043,6 +2195,7 @@
 		}
 		attachAll(t);
 		watchHub(t);
+		webTick(t);
 		var list = findSlots(root);
 		if (list.length !== SLOT_COUNT) {
 			hideStatus(root);

@@ -25,8 +25,10 @@ Spends your ability points automatically, in the ability order of the hero build
 
 ### Known limits
 
-- Settings other than `[noAL]` reset when the map changes or the game restarts: Panorama gives mods no file or
-  storage access found so far. See [Roadmap](#roadmap).
+- Settings are saved through a small page on this repo's GitHub Pages site (`docs/store/`), loaded in a hidden
+  HTML panel; values live in that page's localStorage inside the game's browser (same idea as HP COLORS).
+  Needs internet and GitHub Pages enabled for the repo (Settings > Pages > main / docs). Without it they last for
+  the current map only. `[noAL]` in a build name always works.
 - Sandbox has unlimited points and the HUD never marks pips as affordable there, so normal auto-level does not run
   in Sandbox; use `Max now`.
 - Hero name is not readable from the HUD, so there is no per-hero switch.
@@ -83,8 +85,6 @@ Whichever mod loads first creates the entry and the page; the others only add a 
 
 ## Roadmap
 
-- Persistent settings: a storage API if Deadlock's Panorama has one, otherwise a small web page (GitHub Pages)
-  used as storage the way HP COLORS does, or a `settings.json` baked in at build time.
 - Clean up code left from earlier UI experiments (Settings popup survey, tagged-only mode, delay).
 
 ## Layout

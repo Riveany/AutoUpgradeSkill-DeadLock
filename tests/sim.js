@@ -22,8 +22,12 @@ function render(){slots.forEach((s,i)=>{s.cls=new Set();const t=state[i];if(t<0)
  const b=s.FindChildTraverse('AbilityButton');for(let n=1;n<=3;n++){const p=b.FindChildTraverse('AbilityUnlock'+n);p.cls=new Set();if(t>=n)p.cls.add('hasAbilityUpgrade');if(t+1===n&&points>=1&&!global.hideAfford)p.cls.add('canAffordUpgrade')}
  const badge=s.FindChildTraverse('badge');badge.cls=new Set();if(i===suggestion)badge.cls.add('build_suggestion');});}
 const log=[];
+const webStore={}; const htmlHandlers=[]; let webOnline=true;
+function fakePage(panel,url){ if(!webOnline) return; const hash=decodeURIComponent(url.split('#')[1]||''); let r; try{r=JSON.parse(hash)}catch(e){return}
+  let rep; if(r.o==='hello') rep={i:r.i,ok:true,o:'ready',v:1}; else if(r.o==='get') rep={i:r.i,ok:true,v:webStore[r.k]===undefined?null:webStore[r.k]}; else if(r.o==='set'){webStore[r.k]=r.v; rep={i:r.i,ok:true}}
+  scheduled.push({at:clock+200,f:()=>htmlHandlers.filter(h=>h.p===panel).forEach(h=>h.f(panel.id,'BALS1:'+JSON.stringify(rep)))}); }
 global.$={GetContextPanel:()=>ctxQueue.shift(),Msg:m=>log.push(m),Schedule:(d,f)=>scheduled.push({at:clock+d*1000,f}),
- CreatePanel:(t,p,id)=>new P(t,id,p),RegisterForUnhandledEvent(){},
+ CreatePanel:(t,p,id)=>{const n=new P(t,id,p); if(t==='HTML') n.SetURL=(u)=>fakePage(n,u); return n;},RegisterForUnhandledEvent(){},RegisterEventHandler(ev,p,f){if(ev==='HTMLTitle')htmlHandlers.push({p:p.__t||p,f});},
  DispatchEvent(name,a){if(name==='CitadelConCommand'){const i=+a.split(' ')[1];if(points>=1&&state[i]<3){state[i]++;points--;buys.push(i)}render()}}};
 const buys=[];
 function run(ms){const end=clock+ms;while(true){scheduled.sort((a,b)=>a.at-b.at);if(!scheduled.length||scheduled[0].at>end)break;const s=scheduled.shift();clock=s.at;s.f()}clock=end}
@@ -156,3 +160,18 @@ bn.text='My Haze [AL]'; run(2000);
 // 24: debug dump runs
 log.length=0; click('BALHubDump'); check('debug dump completes', log.some(l=>l.includes('end dump')));
 console.log(log.filter(l=>/globals|\$ members/.test(l)).join('\n').slice(0,300));
+
+// 25: web settings store
+run(6000);
+entry.events.onactivate(); run(500); check('web store connected', hubP.FindChildTraverse('ModHubSection_BuildAutoLevel').kids.some(k=>String(k.text).includes('saved (web store)'))); hubP.events.oncancel();
+const t25=rows[0].FindChildTraverse('BALRowToggle'); t25.events.onactivate(); run(2000);
+check('build switch saved to the web store', !!webStore['bal.settings'] && JSON.parse(webStore['bal.settings']).buildOff['Max Damage']===true);
+t25.events.onactivate(); run(2000);
+check('switching back is saved too', !JSON.parse(webStore['bal.settings']).buildOff['Max Damage']);
+t25.events.onactivate(); run(2000);
+// 26: a new map (fresh HUD and window) gets its settings back from the web store
+const win2=new P('Panel','WindowRoot2'); const hud2=new P('Panel','Hud',win2); const ctx3=new P('Panel','DataFeed',hud2);
+const sig2=new P('Panel','hud_signature',new P('Panel','AbilitiesContainer',hud2));
+for(let i=1;i<=4;i++){const s2=new P('Panel','slot_signature_'+i,sig2);const b2=new P('Panel','AbilityButton',s2);for(let n=1;n<=3;n++)new P('Panel','AbilityUnlock'+n,b2);}
+ctxQueue.push(ctx3); log.length=0; eval(src); run(8000);
+check('new map restores settings from the web store', log.some(l=>l.includes('settings loaded from the web store')) && JSON.parse(win2.attrs.BuildAutoLevelSettings||'{}').buildOff['Max Damage']===true);
