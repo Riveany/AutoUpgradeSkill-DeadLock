@@ -2010,6 +2010,31 @@
 	var CHANGE_SETTLE_MS = 1000;
 	var changeSeen = null;            // { sig, since } while a change settles
 
+	// The game only sells back an upgrade inside its ~10 s refund window, while
+	// the pip shows "canUndo". A drop on an ability that had no refundable pip
+	// recently cannot be a refund (seen in game: the ultimate's pips repaint).
+	var REFUND_WINDOW_MS = 15000;
+	var lastRefundable = [0, 0, 0, 0]; // per ability: last time a pip showed canUndo
+
+	function noteRefundable(t) {
+		for (var i = 0; i < slots.length; i++) {
+			var pips = valid(slots[i]) ? pipsOf(slots[i]) : null;
+			if (!pips) {
+				continue;
+			}
+			for (var n = 1; n <= 3; n++) {
+				if (has(pips.FindChildTraverse('AbilityUnlock' + n), 'canUndo')) {
+					lastRefundable[i] = t;
+					break;
+				}
+			}
+		}
+	}
+
+	function refundableRecently(index, t) {
+		return t - (lastRefundable[index] || 0) < REFUND_WINDOW_MS;
+	}
+
 	function watchManualChanges(current) {
 		if (!lastSeen || lastSeen.length !== current.length) {
 			lastSeen = current;
@@ -2043,7 +2068,10 @@
 				log('ability ' + (i + 1) + ' upgraded by hand');
 			}
 		}
-		if (dropped.length === 1 && droppedBy === 1) {
+		if (dropped.length === 1 && droppedBy === 1 && !refundableRecently(dropped[0], t)) {
+			log('ability ' + (dropped[0] + 1) + ' showed one upgrade less, but nothing on it was refundable; ' +
+				'HUD repaint, ignored: [' + lastSeen.join(',') + '] -> [' + current.join(',') + ']');
+		} else if (dropped.length === 1 && droppedBy === 1) {
 			if (!manualPause) {
 				pauseAuto('you refunded ability ' + (dropped[0] + 1) + ' - resumes once you spend that point');
 				resumeAtTotal = spentTotal(lastSeen);
@@ -2277,6 +2305,7 @@
 			}
 		}
 
+		noteRefundable(t);
 		watchManualChanges(snapshot());
 		lastSuggested = suggested;
 		if (changeSeen) {

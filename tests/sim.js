@@ -12,14 +12,14 @@ class P{constructor(type,id,parent){this.type=type;this.id=id||'';this.kids=[];t
 const win=new P('Panel','WindowRoot'); const hud=new P('Panel','Hud',win);
 const ctx=new P('Panel','DataFeed',hud);
 const sig=new P('Panel','hud_signature',new P('Panel','AbilitiesContainer',hud));
-const state=[0,0,0,0]; // -1 locked, else tier
+const state=[0,0,0,0]; const boughtAt=[]; // -1 locked, else tier
 let points=0, suggestion=0;
 const slots=[];
 for(let i=1;i<=4;i++){const s=new P('Panel','slot_signature_'+i,sig);const b=new P('Panel','AbilityButton',s);for(let n=1;n<=3;n++)new P('Panel','AbilityUnlock'+n,b);new P('Panel','badge',s);slots.push(s)}
 const shopHdr=new P('Label','HeroFavoritesHeaderLabel',hud); shopHdr.text="Haze's Recommended Mods";
 const outer=new P('Panel','SelectedBuildOuter',hud); const bn=new P('Label','bn',outer); bn.cls.add('SelectedBuildName'); bn.text='My Haze build';
 function render(){slots.forEach((s,i)=>{s.cls=new Set();const t=state[i];if(t<0)s.cls.add('not_trained');else s.cls.add('Tier'+t);
- const b=s.FindChildTraverse('AbilityButton');for(let n=1;n<=3;n++){const p=b.FindChildTraverse('AbilityUnlock'+n);p.cls=new Set();if(t>=n)p.cls.add('hasAbilityUpgrade');if(t+1===n&&points>=1&&!global.hideAfford)p.cls.add('canAffordUpgrade')}
+ const b=s.FindChildTraverse('AbilityButton');for(let n=1;n<=3;n++){const p=b.FindChildTraverse('AbilityUnlock'+n);p.cls=new Set();if(t>=n)p.cls.add('hasAbilityUpgrade');if(t===n&&boughtAt[i]!==undefined&&clock-boughtAt[i]<10000)p.cls.add('canUndo');if(t+1===n&&points>=1&&!global.hideAfford)p.cls.add('canAffordUpgrade')}
  const badge=s.FindChildTraverse('badge');badge.cls=new Set();if(i===suggestion)badge.cls.add('build_suggestion');});}
 const log=[];
 const webStore={}; const htmlHandlers=[]; let webOnline=true;
@@ -28,7 +28,7 @@ function fakePage(panel,url){ if(!webOnline) return; const hash=decodeURICompone
   scheduled.push({at:clock+200,f:()=>htmlHandlers.filter(h=>h.p===panel).forEach(h=>h.f(panel.id,'BALS1:'+JSON.stringify(rep)))}); }
 global.$={GetContextPanel:()=>ctxQueue.shift(),Msg:m=>log.push(m),Schedule:(d,f)=>scheduled.push({at:clock+d*1000,f}),
  CreatePanel:(t,p,id)=>{const n=new P(t,id,p); if(t==='HTML') n.SetURL=(u)=>fakePage(n,u); return n;},RegisterForUnhandledEvent(){},RegisterEventHandler(ev,p,f){if(ev==='HTMLTitle')htmlHandlers.push({p:p.__t||p,f});},
- DispatchEvent(name,a){if(name==='CitadelConCommand'){const i=+a.split(' ')[1];if(points>=1&&state[i]<3){state[i]++;points--;buys.push(i)}render()}}};
+ DispatchEvent(name,a){if(name==='CitadelConCommand'){const i=+a.split(' ')[1];if(points>=1&&state[i]<3){state[i]++;points--;buys.push(i);boughtAt[i]=clock}render()}}};
 const buys=[];
 function run(ms){const end=clock+ms;while(true){scheduled.sort((a,b)=>a.at-b.at);if(!scheduled.length||scheduled[0].at>end)break;const s=scheduled.shift();clock=s.at;s.f()}clock=end}
 function panelBtn(id){return win.FindChildTraverse(id)}
@@ -182,7 +182,12 @@ state[3]=0; render(); run(500); state[3]=1; render(); run(2000);
 check('short flicker does not pause', !log.some(l=>l.includes('paused: you refunded')));
 state.splice(0,4,0,0,0,0); render(); run(2000); state.splice(0,4,1,1,1,1); render(); run(2000);
 check('several abilities dropping at once is ignored', !log.some(l=>l.includes('paused: you refunded')) && log.some(l=>l.includes('not a refund, ignored')));
-state[2]=0; render(); run(2000);
+boughtAt[2]=clock; render(); run(600); state[2]=0; render(); run(2000);
 check('a real refund still pauses', log.some(l=>l.includes('paused: you refunded ability 3')));
 state[2]=1; render(); run(2000);
 check('and resumes after re-spending', log.some(l=>l.includes('refunded point was spent again')));
+
+// 28: a drop on an ability with nothing refundable (ultimate repaint) is ignored
+log.length=0; state.splice(0,4,1,1,1,1); boughtAt.length=0; render(); run(16000);
+state[3]=0; render(); run(2500); state[3]=1; render(); run(2000);
+check('drop without a refundable pip does not pause', !log.some(l=>l.includes('paused: you refunded')) && log.some(l=>l.includes('HUD repaint, ignored')));
