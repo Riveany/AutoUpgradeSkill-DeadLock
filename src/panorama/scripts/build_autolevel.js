@@ -1,5 +1,5 @@
 /*
- * Build Auto-Level for Deadlock - v0.1-dev
+ * Build Auto-Level for Deadlock - v0.1.0
  * (development fork of Build Auto-Level v1.0 by SkyAxe - https://gamebanana.com/mods/727925)
  *
  * Spends ability unlocks and ability points automatically, in the order set by
@@ -12,16 +12,15 @@
  * button you would click yourself. With no build selected, or a build without
  * an ability order, it does nothing.
  *
- * Added in v0.1:
- *  - Manual override: refunding an upgrade, or upgrading a different ability by
- *    hand, pauses Auto-Level until you press Resume (or the hero/match changes),
- *    so a point you take back is not spent on the same ability again.
- *  - Settings panel on the HUD (top right, click the header to expand):
- *      On/Off, mode "all builds" or "only builds tagged [AL]", off for this hero,
- *      off for this build, delay before each purchase, Resume, Max now, Undo,
- *      and a Debug dump that writes what the script can see to the console.
- *  - "Only tagged builds" mode: put [AL] anywhere in a build's name to opt it in.
- *    This is also the way to limit the mod to your own builds.
+ * Added in this fork (v0.1.0):
+ *  - Refunding an upgrade pauses auto-level until that point is spent again,
+ *    so it is not put back into the same ability.
+ *  - Per-build on/off: "AL" button after each build name in the build browser,
+ *    or "[noAL]" in a build's name.
+ *  - Esc menu "MOD" page with the settings (shared with other mods, see README).
+ *  - Quick controls (Max now / Undo / Pause) in the Sandbox test tools menu and,
+ *    optionally, a small HUD bar.
+ *  - Settings saved through a small page on the project's GitHub Pages site.
  *
  * The script is included from two layouts (base_hud.xml and hud_data_feed.xml)
  * so another mod replacing one of them does not switch it off. A lock stored on
@@ -37,7 +36,7 @@
 (function () {
 	'use strict';
 
-	var VERSION = '0.1-dev';
+	var VERSION = '0.1.0';
 	var TAG = '[BuildAutoLevel] ';
 	var TICK_SECONDS = 0.25;          // how often the HUD is checked
 	var CONFIRM_TIMEOUT_MS = 2000;    // how long to wait for the game to apply an action
