@@ -2002,25 +2002,56 @@
 	// (anywhere they like); after that it carries on with the next new point.
 	// Upgrading a different ability by hand needs no pause: the build simply
 	// continues from there.
+	// The HUD repaints its ability panels now and then (respawn, reconnect,
+	// prediction resets) and for a moment reports fewer upgrades than there are.
+	// A change only counts once it has held for CHANGE_SETTLE_MS, and only a
+	// single ability losing exactly one upgrade is treated as a refund - that is
+	// all the game's refund can do.
+	var CHANGE_SETTLE_MS = 1000;
+	var changeSeen = null;            // { sig, since } while a change settles
+
 	function watchManualChanges(current) {
 		if (!lastSeen || lastSeen.length !== current.length) {
 			lastSeen = current;
+			changeSeen = null;
 			return;
 		}
+		var sig = current.join(',');
+		if (sig === lastSeen.join(',')) {
+			changeSeen = null;
+			return;
+		}
+		var t = now();
+		if (!changeSeen || changeSeen.sig !== sig) {
+			changeSeen = { sig: sig, since: t };
+			return;
+		}
+		if (t - changeSeen.since < CHANGE_SETTLE_MS) {
+			return;
+		}
+		changeSeen = null;
+		var dropped = [];
+		var droppedBy = 0;
 		for (var i = 0; i < current.length; i++) {
 			if (current[i] === -2 || lastSeen[i] === -2) {
 				continue;
 			}
 			if (current[i] < lastSeen[i]) {
-				if (!manualPause) {
-					pauseAuto('you refunded ability ' + (i + 1) + ' - resumes once you spend that point');
-					resumeAtTotal = spentTotal(lastSeen);
-				}
-				break;
-			}
-			if (current[i] > lastSeen[i] && i !== lastSuggested && i !== lastActed) {
+				dropped.push(i);
+				droppedBy += lastSeen[i] - current[i];
+			} else if (current[i] > lastSeen[i] && i !== lastSuggested && i !== lastActed) {
 				log('ability ' + (i + 1) + ' upgraded by hand');
 			}
+		}
+		if (dropped.length === 1 && droppedBy === 1) {
+			if (!manualPause) {
+				pauseAuto('you refunded ability ' + (dropped[0] + 1) + ' - resumes once you spend that point');
+				resumeAtTotal = spentTotal(lastSeen);
+				log('refund seen: [' + lastSeen.join(',') + '] -> [' + current.join(',') + ']');
+			}
+		} else if (dropped.length) {
+			log('HUD reported fewer upgrades on ' + dropped.length + ' abilities; not a refund, ignored: [' +
+				lastSeen.join(',') + '] -> [' + current.join(',') + ']');
 		}
 		if (manualPause && resumeAtTotal >= 0 && spentTotal(current) >= resumeAtTotal) {
 			resumeAuto('the refunded point was spent again');
@@ -2248,6 +2279,12 @@
 
 		watchManualChanges(snapshot());
 		lastSuggested = suggested;
+		if (changeSeen) {
+			// something changed that this script did not do: hold still until it
+			// settles, so a refund is never bought straight back
+			setStatus(root, 'waiting for the HUD to settle');
+			return;
+		}
 
 		var bursting = burstUntil > 0;
 		if (bursting && t > burstUntil) {

@@ -43,7 +43,7 @@ check('buys suggested ability 2', buys.length===1&&buys[0]===1&&state[1]===1);
 state[1]=0; points=1; render(); run(3000);
 check('refund pauses (no rebuy)', buys.length===1 && log.some(l=>l.includes('paused: you refunded ability 2')));
 // user spends elsewhere manually
-state[2]=1; points=0; render(); run(1000);
+state[2]=1; points=0; render(); run(1600);
 check('spending the refunded point resumes', buys.length===1 && log.some(l=>l.includes('resumed (the refunded point was spent again)')));
 // 3: next new point is spent automatically
 points=1; suggestion=0; render(); run(1500);
@@ -51,7 +51,7 @@ check('next point auto-spent after resume', buys.length===2 && buys[1]===0);
 // refund but do not re-spend: stays paused even when a new point arrives
 state[0]=0; points=1; render(); run(1000); points=2; render(); run(2000);
 check('refund without re-spend stays paused', buys.length===2);
-state[3]=1; points=1; render(); run(1000);
+state[3]=1; points=1; render(); run(1600);
 check('re-spend resumes', log.filter(l=>l.includes('refunded point was spent again')).length===2);
 run(1500); check('then auto spends the new point', buys.length===3);
 // 7: global off
@@ -175,3 +175,14 @@ const sig2=new P('Panel','hud_signature',new P('Panel','AbilitiesContainer',hud2
 for(let i=1;i<=4;i++){const s2=new P('Panel','slot_signature_'+i,sig2);const b2=new P('Panel','AbilityButton',s2);for(let n=1;n<=3;n++)new P('Panel','AbilityUnlock'+n,b2);}
 ctxQueue.push(ctx3); log.length=0; eval(src); run(8000);
 check('new map restores settings from the web store', log.some(l=>l.includes('settings loaded from the web store')) && JSON.parse(win2.attrs.BuildAutoLevelSettings||'{}').buildOff['Max Damage']===true);
+// 27: HUD repaint flicker is not a refund
+bn.text='Some Build'; run(2000); log.length=0;
+state.splice(0,4,1,1,1,1); points=0; suggestion=0; render(); run(2000);
+state[3]=0; render(); run(500); state[3]=1; render(); run(2000);
+check('short flicker does not pause', !log.some(l=>l.includes('paused: you refunded')));
+state.splice(0,4,0,0,0,0); render(); run(2000); state.splice(0,4,1,1,1,1); render(); run(2000);
+check('several abilities dropping at once is ignored', !log.some(l=>l.includes('paused: you refunded')) && log.some(l=>l.includes('not a refund, ignored')));
+state[2]=0; render(); run(2000);
+check('a real refund still pauses', log.some(l=>l.includes('paused: you refunded ability 3')));
+state[2]=1; render(); run(2000);
+check('and resumes after re-spending', log.some(l=>l.includes('refunded point was spent again')));
